@@ -1,0 +1,206 @@
+{
+  "name": "02 Web Lead AI Qualifier (Claude) → HubSpot + SMS Alert",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "new-lead",
+        "httpMethod": "POST",
+        "responseMode": "onReceived"
+      },
+      "name": "Website Form",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-5",
+        "prompt": "You qualify inbound leads for a commercial services company (cleaning, landscaping, remodeling).\n\nLead:\nName: {{ $json.name }}\nCompany: {{ $json.company }}\nPhone: {{ $json.phone }}\nEmail: {{ $json.email }}\nMessage: {{ $json.message }}\n\nReturn ONLY JSON: {\"score\": 1-10, \"service\": \"cleaning|landscaping|remodeling|other\", \"urgency\": \"hot|warm|cold\", \"summary\": \"one sentence\", \"next_step\": \"one sentence\"}",
+        "options": {
+          "maxTokens": 300
+        }
+      },
+      "name": "Claude: Score & Summarize",
+      "type": "@n8n/n8n-nodes-langchain.anthropic",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json.text ?? $input.first().json.content;\nconst ai = JSON.parse(raw.replace(/```json|```/g,'').trim());\nreturn [{ json: { ...$('Website Form').first().json, ...ai } }];"
+      },
+      "name": "Parse JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "contact",
+        "operation": "upsert",
+        "email": "={{ $json.email }}",
+        "additionalFields": {
+          "firstName": "={{ $json.name }}",
+          "company": "={{ $json.company }}",
+          "phone": "={{ $json.phone }}",
+          "lifecycleStage": "lead",
+          "customProperties": {
+            "property": [
+              {
+                "name": "lead_score",
+                "value": "={{ $json.score }}"
+              },
+              {
+                "name": "service_interest",
+                "value": "={{ $json.service }}"
+              }
+            ]
+          }
+        }
+      },
+      "name": "Create HubSpot Contact",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [
+        750,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.score }}",
+              "operation": "largerEqual",
+              "value2": 7
+            }
+          ]
+        }
+      },
+      "name": "Hot Lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "from": "={{ $env.TWILIO_FROM }}",
+        "to": "={{ $env.OWNER_PHONE }}",
+        "message": "🔥 HOT LEAD ({{ $json.score }}/10) {{ $json.name }} – {{ $json.company }}\n{{ $json.summary }}\nCall: {{ $json.phone }}"
+      },
+      "name": "SMS Owner Now",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $env.OWNER_EMAIL }}",
+        "subject": "New lead: {{ $json.name }} ({{ $json.score }}/10)",
+        "message": "={{ $json.summary }}\n\nNext step: {{ $json.next_step }}\n\nPhone: {{ $json.phone }}\nEmail: {{ $json.email }}"
+      },
+      "name": "Email Digest Later",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Website Form": {
+      "main": [
+        [
+          {
+            "node": "Claude: Score & Summarize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude: Score & Summarize": {
+      "main": [
+        [
+          {
+            "node": "Parse JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse JSON": {
+      "main": [
+        [
+          {
+            "node": "Create HubSpot Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create HubSpot Contact": {
+      "main": [
+        [
+          {
+            "node": "Hot Lead?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hot Lead?": {
+      "main": [
+        [
+          {
+            "node": "SMS Owner Now",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Email Digest Later",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "lead-capture"
+    },
+    {
+      "name": "ai"
+    },
+    {
+      "name": "hubspot"
+    }
+  ]
+}

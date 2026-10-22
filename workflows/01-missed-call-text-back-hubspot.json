@@ -1,0 +1,189 @@
+{
+  "name": "01 Missed Call Text-Back + HubSpot",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "missed-call",
+        "httpMethod": "POST",
+        "responseMode": "onReceived"
+      },
+      "name": "Twilio Missed Call",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $now.hour }}",
+              "operation": "largerEqual",
+              "value2": 8
+            },
+            {
+              "value1": "={{ $now.hour }}",
+              "operation": "smaller",
+              "value2": 18
+            }
+          ]
+        }
+      },
+      "name": "Business Hours?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "from": "={{ $json.To }}",
+        "to": "={{ $json.From }}",
+        "message": "Hi, this is {{ $env.BUSINESS_NAME }}. Sorry we missed you — we're on a job. Reply with what you need and a good time, and we'll call you right back."
+      },
+      "name": "Send SMS (during hours)",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        500,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "from": "={{ $json.To }}",
+        "to": "={{ $json.From }}",
+        "message": "Thanks for calling {{ $env.BUSINESS_NAME }}. We're closed right now but reply here with what you need and we'll reach out first thing in the morning."
+      },
+      "name": "Send SMS (after hours)",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        500,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "contact",
+        "operation": "upsert",
+        "email": "={{ $json.From }}@sms.placeholder",
+        "additionalFields": {
+          "phone": "={{ $json.From }}",
+          "lifecycleStage": "lead",
+          "leadStatus": "NEW"
+        }
+      },
+      "name": "Create/Update HubSpot Contact",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [
+        750,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "engagement",
+        "operation": "create",
+        "type": "task",
+        "metadata": {
+          "subject": "Call back missed caller {{ $json.From }}",
+          "body": "Missed call captured by n8n. Text-back already sent.",
+          "status": "NOT_STARTED"
+        }
+      },
+      "name": "Create Follow-up Task",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Twilio Missed Call": {
+      "main": [
+        [
+          {
+            "node": "Business Hours?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Business Hours?": {
+      "main": [
+        [
+          {
+            "node": "Send SMS (during hours)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send SMS (after hours)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send SMS (during hours)": {
+      "main": [
+        [
+          {
+            "node": "Create/Update HubSpot Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create/Update HubSpot Contact": {
+      "main": [
+        [
+          {
+            "node": "Create Follow-up Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send SMS (after hours)": {
+      "main": [
+        [
+          {
+            "node": "Create/Update HubSpot Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "lead-capture"
+    },
+    {
+      "name": "twilio"
+    },
+    {
+      "name": "hubspot"
+    }
+  ]
+}

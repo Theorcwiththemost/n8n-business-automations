@@ -1,0 +1,229 @@
+{
+  "name": "03 Overdue Invoice Chaser (QuickBooks → SMS/Email)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * 1-5"
+            }
+          ]
+        }
+      },
+      "name": "Every Morning 8am",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "invoice",
+        "operation": "getAll",
+        "returnAll": true,
+        "filters": {
+          "query": "SELECT * FROM Invoice WHERE Balance > '0'"
+        }
+      },
+      "name": "Get Open Invoices",
+      "type": "n8n-nodes-base.quickbooks",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const today = new Date();\nreturn $input.all().map(i => {\n  const due = new Date(i.json.DueDate);\n  const days = Math.floor((today - due) / 86400000);\n  return { json: { ...i.json, daysOverdue: days,\n    stage: days >= 30 ? 'final' : days >= 14 ? 'second' : days >= 3 ? 'first' : 'none' } };\n}).filter(i => i.json.stage !== 'none');"
+      },
+      "name": "Days Overdue",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "rules": [
+            {
+              "value2": "first",
+              "output": 0
+            },
+            {
+              "value2": "second",
+              "output": 1
+            },
+            {
+              "value2": "final",
+              "output": 2
+            }
+          ]
+        },
+        "value1": "={{ $json.stage }}",
+        "dataType": "string"
+      },
+      "name": "Route by Stage",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [
+        750,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.BillEmail.Address }}",
+        "subject": "Invoice #{{ $json.DocNumber }} – quick reminder",
+        "message": "Hi {{ $json.CustomerRef.name }},\n\nJust a friendly reminder that invoice #{{ $json.DocNumber }} for ${{ $json.Balance }} was due {{ $json.DueDate }}. If it's already on its way, thank you!\n\nPay online or reply with any questions.\n\n{{ $env.BUSINESS_NAME }}"
+      },
+      "name": "Friendly Reminder (email)",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        150
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.BillEmail.Address }}",
+        "subject": "Second notice: Invoice #{{ $json.DocNumber }} is {{ $json.daysOverdue }} days past due",
+        "message": "Hi {{ $json.CustomerRef.name }},\n\nInvoice #{{ $json.DocNumber }} (${{ $json.Balance }}) is now {{ $json.daysOverdue }} days past due. Please arrange payment this week or let us know if something's wrong with the invoice.\n\n{{ $env.BUSINESS_NAME }}"
+      },
+      "name": "Second Notice (email + SMS)",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "from": "={{ $env.TWILIO_FROM }}",
+        "to": "={{ $json.PrimaryPhone.FreeFormNumber }}",
+        "message": "{{ $env.BUSINESS_NAME }}: invoice #{{ $json.DocNumber }} (${{ $json.Balance }}) is {{ $json.daysOverdue }} days past due. Reply here with questions."
+      },
+      "name": "SMS Nudge",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "engagement",
+        "operation": "create",
+        "type": "task",
+        "metadata": {
+          "subject": "COLLECTIONS: {{ $json.CustomerRef.name }} inv #{{ $json.DocNumber }} ${{ $json.Balance }} – {{ $json.daysOverdue }}d",
+          "body": "30+ days overdue. Call personally before sending to collections.",
+          "status": "NOT_STARTED"
+        }
+      },
+      "name": "Final Notice → Owner Task",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        450
+      ]
+    }
+  ],
+  "connections": {
+    "Every Morning 8am": {
+      "main": [
+        [
+          {
+            "node": "Get Open Invoices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Open Invoices": {
+      "main": [
+        [
+          {
+            "node": "Days Overdue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Days Overdue": {
+      "main": [
+        [
+          {
+            "node": "Route by Stage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Stage": {
+      "main": [
+        [
+          {
+            "node": "Friendly Reminder (email)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Second Notice (email + SMS)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Final Notice → Owner Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Second Notice (email + SMS)": {
+      "main": [
+        [
+          {
+            "node": "SMS Nudge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "collections"
+    },
+    {
+      "name": "quickbooks"
+    },
+    {
+      "name": "twilio"
+    }
+  ]
+}

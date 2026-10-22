@@ -1,0 +1,198 @@
+{
+  "name": "05 Daily Government Bid Digest (RSS → Claude → Email)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 * * 1-5"
+            }
+          ]
+        }
+      },
+      "name": "Every Morning 7am",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SAM_RSS_URL }}"
+      },
+      "name": "SAM.gov Feed",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [
+        250,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.BIDNET_RSS_URL }}"
+      },
+      "name": "BidNet Feed",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [
+        250,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "name": "Merge",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "dateTime": [
+            {
+              "value1": "={{ $json.isoDate }}",
+              "operation": "after",
+              "value2": "={{ $now.minus({hours: 24}).toISO() }}"
+            }
+          ]
+        }
+      },
+      "name": "Last 24h Only",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 1,
+      "position": [
+        750,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-5",
+        "prompt": "You are a bid analyst for a commercial janitorial (NAICS 561720) and grounds maintenance (561730) contractor in Texas. Here are today's solicitations as JSON:\n\n{{ JSON.stringify($input.all().map(i => i.json)) }}\n\nPick the ones worth pursuing. For each: title, agency, due date, est. fit (High/Med/Low), one-line why, and the link. Output clean HTML for an email. If nothing fits, say so in one line.",
+        "options": {
+          "maxTokens": 1500
+        }
+      },
+      "name": "Claude: Rank for Janitorial/Grounds",
+      "type": "@n8n/n8n-nodes-langchain.anthropic",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $env.OWNER_EMAIL }}",
+        "subject": "Bid digest – {{ $now.toFormat('MMM d') }}",
+        "message": "={{ $json.text ?? $json.content }}",
+        "options": {
+          "contentType": "html"
+        }
+      },
+      "name": "Email Digest",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [
+        1250,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Every Morning 7am": {
+      "main": [
+        [
+          {
+            "node": "SAM.gov Feed",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "BidNet Feed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SAM.gov Feed": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Last 24h Only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Last 24h Only": {
+      "main": [
+        [
+          {
+            "node": "Claude: Rank for Janitorial/Grounds",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude: Rank for Janitorial/Grounds": {
+      "main": [
+        [
+          {
+            "node": "Email Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BidNet Feed": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "gov-contracting"
+    },
+    {
+      "name": "ai"
+    }
+  ]
+}

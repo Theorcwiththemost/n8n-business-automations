@@ -1,0 +1,188 @@
+{
+  "name": "04 Post-Job Google Review Request",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "job-complete",
+        "httpMethod": "POST",
+        "responseMode": "onReceived"
+      },
+      "name": "Job Marked Complete",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 24,
+        "unit": "hours"
+      },
+      "name": "Wait 24 Hours",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "from": "={{ $env.TWILIO_FROM }}",
+        "to": "={{ $json.customerPhone }}",
+        "message": "Hi {{ $json.customerName }}, thanks for choosing {{ $env.BUSINESS_NAME }}! If we did a good job, a quick Google review helps us a ton: {{ $env.GOOGLE_REVIEW_LINK }}\nIf anything wasn't right, just reply here and we'll fix it."
+      },
+      "name": "Thank-You + Review Link",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 3,
+        "unit": "days"
+      },
+      "name": "Wait 3 Days",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        750,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "lookup",
+        "documentId": "={{ $env.REVIEW_TRACKER_SHEET }}",
+        "sheetName": "Reviews",
+        "lookupColumn": "phone",
+        "lookupValue": "={{ $json.customerPhone }}"
+      },
+      "name": "Review Left? (check sheet)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        1000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.reviewed ?? false }}",
+              "value2": false
+            }
+          ]
+        }
+      },
+      "name": "No Review Yet?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "from": "={{ $env.TWILIO_FROM }}",
+        "to": "={{ $json.customerPhone }}",
+        "message": "Last nudge, promise 🙂 — 30 seconds for a review would mean a lot: {{ $env.GOOGLE_REVIEW_LINK }} Thank you!"
+      },
+      "name": "One Gentle Follow-up",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        200
+      ]
+    }
+  ],
+  "connections": {
+    "Job Marked Complete": {
+      "main": [
+        [
+          {
+            "node": "Wait 24 Hours",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 24 Hours": {
+      "main": [
+        [
+          {
+            "node": "Thank-You + Review Link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Thank-You + Review Link": {
+      "main": [
+        [
+          {
+            "node": "Wait 3 Days",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 3 Days": {
+      "main": [
+        [
+          {
+            "node": "Review Left? (check sheet)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Review Left? (check sheet)": {
+      "main": [
+        [
+          {
+            "node": "No Review Yet?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No Review Yet?": {
+      "main": [
+        [
+          {
+            "node": "One Gentle Follow-up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "reputation"
+    },
+    {
+      "name": "twilio"
+    }
+  ]
+}
